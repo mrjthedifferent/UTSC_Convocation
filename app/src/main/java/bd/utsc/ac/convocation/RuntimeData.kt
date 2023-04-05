@@ -14,8 +14,8 @@ class RuntimeData {
 
         fun getURL(env: Environment): String {
             return when (env) {
-                Environment.PRODUCTION -> "https://app.convocation.ustc.ac.bd/"
-                Environment.STAGING -> "https://app.convocation.ustc.yasinuddowla.com/"
+                Environment.PRODUCTION -> "https://convocation.ustc.ac.bd/app/"
+                Environment.STAGING -> "https://convocation.ustc.yasinuddowla.com/app/"
             }
         }
     }
