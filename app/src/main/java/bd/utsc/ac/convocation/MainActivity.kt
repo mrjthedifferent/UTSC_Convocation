@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.webkit.*
 import android.widget.Button
@@ -55,10 +56,11 @@ class MainActivity : AppCompatActivity() {
         switchEnvironmentLayout = findViewById(R.id.switchEnvironmentLayout)
 
         // check environment
-        if(RuntimeData.systemEnv == Environment.STAGING) {
+        if (RuntimeData.systemEnv == Environment.STAGING) {
             switchEnvironmentLayout.visibility = View.VISIBLE
             val currentEnv: String = RuntimeData.env.name
-            findViewById<TextView>(R.id.switchEnvironmentText).text = getString(R.string.environment, currentEnv)
+            findViewById<TextView>(R.id.switchEnvironmentText).text =
+                getString(R.string.environment, currentEnv)
             findViewById<Button>(R.id.switchEnvironmentButton).setOnClickListener {
                 if (RuntimeData.env == Environment.STAGING) {
                     RuntimeData.env = Environment.PRODUCTION
@@ -83,98 +85,9 @@ class MainActivity : AppCompatActivity() {
             val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             manager.enqueue(request)
         }
-        webView.webChromeClient = object : WebChromeClient() {
+        webView.webChromeClient = MyWebChromeClient()
 
-            override fun onPermissionRequest(request: PermissionRequest) {
-                if (hasPermissions()) {
-                    request.grant(request.resources)
-                } else {
-                    request.deny()
-                }
-            }
-
-            override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                if (filePath != null) {
-                    filePath!!.onReceiveValue(null)
-                    filePath = null
-                }
-                filePath = filePathCallback
-
-                //get input type
-                val inputType = fileChooserParams?.acceptTypes?.get(0)
-                if (inputType != null) {
-                    if (inputType.contains("image")) {
-                        cropImage.launch(
-                            CropImageContractOptions(
-                                uri = null,
-                                cropImageOptions = CropImageOptions(
-                                    imageSourceIncludeGallery = !fileChooserParams.isCaptureEnabled,
-                                )
-                            )
-                        )
-                    } else {
-                        /*if (fileChooserParams.isCaptureEnabled) {
-
-                                }*/
-
-                        // Getting Image
-                        val pickImageIntent = Intent(Intent.ACTION_PICK)
-                        pickImageIntent.setDataAndType(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                            "image/*"
-                        )
-
-                        val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
-                        contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
-                        contentSelectionIntent.type = "*/*"
-
-                        val intentArray: Array<Intent?> = arrayOf(pickImageIntent)
-
-                        val chooserIntent = Intent(Intent.ACTION_CHOOSER)
-                        chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
-                        chooserIntent.putExtra(Intent.EXTRA_TITLE, "Select File")
-                        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray)
-
-                        fileChooserLauncher.launch(chooserIntent)
-                    }
-                }
-                return true
-            }
-
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progressBar.progress = newProgress
-                super.onProgressChanged(view, newProgress)
-            }
-        }
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                webView.visibility = View.VISIBLE
-                progressBar.visibility = View.VISIBLE
-                errorLayout.visibility = View.GONE
-                super.onPageStarted(view, url, favicon)
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                progressBar.visibility = View.GONE
-                super.onPageFinished(view, url)
-            }
-
-            override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
-            ) {
-                progressBar.visibility = View.GONE
-                errorLayout.visibility = View.VISIBLE
-                webView.visibility = View.GONE
-                super.onReceivedError(view, request, error)
-            }
-        }
+        webView.webViewClient = MyWebViewClient()
 
         /* Check network and load URL */
         val connectivityManager =
@@ -187,33 +100,8 @@ class MainActivity : AppCompatActivity() {
             noInternetLayout.visibility = View.VISIBLE
         }
         connectivityManager.registerNetworkCallback(
-            builder.build(),
-            object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    // Network is available
-                    runOnUiThread {
-                        webView.visibility = View.VISIBLE
-                        noInternetLayout.visibility = View.GONE
-                        webView.loadUrl(RuntimeData.getURL(RuntimeData.env))
-                    }
-                }
-
-                override fun onLost(network: Network) {
-                    // Network is lost
-                    runOnUiThread {
-                        webView.visibility = View.GONE
-                        noInternetLayout.visibility = View.VISIBLE
-                    }
-                }
-
-                override fun onUnavailable() {
-                    // Network is unavailable
-                    runOnUiThread {
-                        webView.visibility = View.GONE
-                        noInternetLayout.visibility = View.VISIBLE
-                    }
-                }
-            })
+            builder.build(), MyNetworkCallback()
+        )
 
         retryButton.setOnClickListener {
             recreate()
@@ -225,6 +113,136 @@ class MainActivity : AppCompatActivity() {
 
         // Check for permissions
         hasPermissions()
+
+        // Handle on Back pressed
+        webView.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (webView.canGoBack()) {
+                        webView.goBack()
+                    } else {
+                        finish()
+                    }
+                    return@setOnKeyListener true
+                }
+            }
+            return@setOnKeyListener false
+        }
+    }
+
+    internal inner class MyNetworkCallback : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            // Network is available
+            runOnUiThread {
+                webView.visibility = View.VISIBLE
+                noInternetLayout.visibility = View.GONE
+                webView.loadUrl(RuntimeData.getURL(RuntimeData.env))
+            }
+        }
+
+        override fun onLost(network: Network) {
+            // Network is lost
+            runOnUiThread {
+                webView.visibility = View.GONE
+                noInternetLayout.visibility = View.VISIBLE
+            }
+        }
+
+        override fun onUnavailable() {
+            // Network is unavailable
+            runOnUiThread {
+                webView.visibility = View.GONE
+                noInternetLayout.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    internal inner class MyWebViewClient : WebViewClient() {
+        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+            webView.visibility = View.VISIBLE
+            progressBar.visibility = View.VISIBLE
+            errorLayout.visibility = View.GONE
+            super.onPageStarted(view, url, favicon)
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            progressBar.visibility = View.GONE
+            super.onPageFinished(view, url)
+        }
+
+        override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?
+        ) {
+            progressBar.visibility = View.GONE
+            errorLayout.visibility = View.VISIBLE
+            webView.visibility = View.GONE
+            super.onReceivedError(view, request, error)
+        }
+    }
+
+    internal inner class MyWebChromeClient : WebChromeClient() {
+        override fun onPermissionRequest(request: PermissionRequest) {
+            if (hasPermissions()) {
+                request.grant(request.resources)
+            } else {
+                request.deny()
+            }
+        }
+
+        override fun onShowFileChooser(
+            webView: WebView?,
+            filePathCallback: ValueCallback<Array<Uri>>?,
+            fileChooserParams: FileChooserParams?
+        ): Boolean {
+            if (filePath != null) {
+                filePath!!.onReceiveValue(null)
+                filePath = null
+            }
+            filePath = filePathCallback
+
+            //get input type
+            val inputType = fileChooserParams?.acceptTypes?.get(0)
+            if (inputType != null) {
+                if (inputType.contains("image")) {
+                    cropImage.launch(
+                        CropImageContractOptions(
+                            uri = null,
+                            cropImageOptions = CropImageOptions(
+                                imageSourceIncludeGallery = !fileChooserParams.isCaptureEnabled,
+                            )
+                        )
+                    )
+                } else {
+                    // Getting Image
+                    val pickImageIntent = Intent(Intent.ACTION_PICK)
+                    pickImageIntent.setDataAndType(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        "image/*"
+                    )
+
+                    val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
+                    contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
+                    contentSelectionIntent.type = "*/*"
+
+                    val intentArray: Array<Intent?> = arrayOf(pickImageIntent)
+
+                    val chooserIntent = Intent(Intent.ACTION_CHOOSER)
+                    chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
+                    chooserIntent.putExtra(Intent.EXTRA_TITLE, "Select File")
+                    chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray)
+
+                    fileChooserLauncher.launch(chooserIntent)
+                }
+            }
+            return true
+        }
+
+        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+            progressBar.progress = newProgress
+            super.onProgressChanged(view, newProgress)
+        }
     }
 
     /// File Chooser Related Functions
